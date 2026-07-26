@@ -1,0 +1,43 @@
+{
+  "expo": {
+    "name": "मनोज ट्रेडर्स",
+    "slug": "manoj-traders",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#004AAD"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#004AAD"
+      },
+      "package": "com.manojtraders.app",
+      "permissions": [
+        "READ_CONTACTS",
+        "WRITE_CONTACTS",
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "READ_MEDIA_IMAGES"
+      ]
+    },
+    "ios": {
+      "bundleIdentifier": "com.manojtraders.app",
+      "infoPlist": {
+        "NSContactsUsageDescription": "Manoj Traders को आपके contacts देखने की अनुमति चाहिए ताकि Admin customer sync कर सके।",
+        "NSCameraUsageDescription": "बिल की फोटो खींचने के लिए कैमरे की अनुमति चाहिए।",
+        "NSPhotoLibraryUsageDescription": "बिल की फोटो गैलरी से चुनने के लिए अनुमति चाहिए।"
+      }
+    },
+    "plugins": [
+      "expo-contacts",
+      "expo-image-picker"
+    ],
+    "extra": {
+      "apiBaseUrl": "https://myserver.com"
+    }
+  }
+}
