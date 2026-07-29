@@ -89,6 +89,10 @@ const updateBill = asyncHandler(async (req, res) => {
     bill.image = { type: 'drive', url: driveImageUrl, cloudinaryPublicId: null };
   }
   await bill.save();
+  await Transaction.updateMany(
+    { bill: bill._id },
+    { status: bill.status === 'paid' ? 'paid' : 'pending' }
+  );
   res.json({ success: true, bill });
 });
 

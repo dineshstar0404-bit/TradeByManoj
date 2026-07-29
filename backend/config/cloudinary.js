@@ -17,6 +17,8 @@ const storage = new CloudinaryStorage({
   },
 });
 
-const upload = multer({ storage, limits: { fileSize: 8 * 1024 * 1024 } });
+// Kept under Vercel's hard 4.5MB request body cap so oversized files fail with
+// a clear Multer error instead of being cut off silently by the platform.
+const upload = multer({ storage, limits: { fileSize: 4 * 1024 * 1024 } });
 
 module.exports = { cloudinary, upload };

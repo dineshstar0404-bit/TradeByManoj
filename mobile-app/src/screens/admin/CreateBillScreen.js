@@ -11,7 +11,8 @@ const INR = n => '₹' + Number(n||0).toLocaleString('en-IN');
 const uid = () => Math.random().toString(36).slice(2,8);
 const today = () => new Date().toISOString().slice(0,10);
 
-export default function CreateBillScreen({ navigation }) {
+export default function CreateBillScreen({ navigation, route }) {
+  const presetCustomerId = route?.params?.presetCustomerId;
   const [customers,  setCustomers]  = useState([]);
   const [stockItems, setStockItems] = useState([]);
   const [custId,     setCustId]     = useState('');
@@ -31,7 +32,13 @@ export default function CreateBillScreen({ navigation }) {
   const [error,      setError]      = useState('');
 
   useEffect(() => {
-    getUsers().then(r => { const c = r.users||[]; setCustomers(c); if(c[0]) setCustId(c[0]._id); });
+    getUsers().then(r => {
+      const c = r.users||[];
+      setCustomers(c);
+      const preset = presetCustomerId && c.find(x => x.id === presetCustomerId);
+      if (preset) setCustId(preset.id);
+      else if (c[0]) setCustId(c[0].id);
+    });
     getItems().then(r => { const i = r.items||[]; setStockItems(i); if(i[0]) { setItemId(i[0]._id); setRatePerKg(String(i[0].pricePerUnit)); } });
   }, []);
 
@@ -49,16 +56,27 @@ export default function CreateBillScreen({ navigation }) {
   const total = itemAmt - L - T - C;
   const paid  = allPaid ? total : (Number(paidAmount)||0);
 
+  // Vercel serverless functions hard-cap request bodies at 4.5MB (not configurable),
+  // so an oversized photo fails the upload with no useful error — catch it client-side.
+  const MAX_PHOTO_BYTES = 4 * 1024 * 1024;
+  const acceptPhoto = (asset) => {
+    if (asset.fileSize && asset.fileSize > MAX_PHOTO_BYTES) {
+      Alert.alert('फोटो बहुत बड़ी है', 'कृपया कम रिज़ॉल्यूशन/क्वालिटी में दोबारा फोटो लें (4MB से कम)।');
+      return;
+    }
+    setPhoto(asset);
+  };
+
   const pickPhoto = async () => {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) { Alert.alert('Permission','Camera permission required.'); return; }
-    const res = await ImagePicker.launchCameraAsync({ quality: 0.7 });
-    if (!res.canceled) setPhoto(res.assets[0]);
+    const res = await ImagePicker.launchCameraAsync({ quality: 0.4 });
+    if (!res.canceled) acceptPhoto(res.assets[0]);
   };
 
   const pickGallery = async () => {
-    const res = await ImagePicker.launchImageLibraryAsync({ quality: 0.7 });
-    if (!res.canceled) setPhoto(res.assets[0]);
+    const res = await ImagePicker.launchImageLibraryAsync({ quality: 0.4 });
+    if (!res.canceled) acceptPhoto(res.assets[0]);
   };
 
   const submit = async () => {
@@ -93,8 +111,8 @@ export default function CreateBillScreen({ navigation }) {
         <Card>
           <Text style={styles.label}>ग्राहक चुनें</Text>
           {customers.map(c => (
-            <TouchableOpacity key={c._id} onPress={() => setCustId(c._id)} style={[styles.option, custId===c._id && styles.optActive]}>
-              <Text style={{ color: custId===c._id ? '#fff' : COLORS.text, fontWeight:'600' }}>{c.name}</Text>
+            <TouchableOpacity key={c.id} onPress={() => setCustId(c.id)} style={[styles.option, custId===c.id && styles.optActive]}>
+              <Text style={{ color: custId===c.id ? '#fff' : COLORS.text, fontWeight:'600' }}>{c.name}</Text>
             </TouchableOpacity>
           ))}
         </Card>
