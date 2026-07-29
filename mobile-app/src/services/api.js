@@ -116,6 +116,13 @@ export const login = (userId, password) =>
 /** GET /api/auth/me */
 export const getMe = () => request('/api/auth/me');
 
+/** PUT /api/users/me/password — self-service password change */
+export const changeMyPassword = (currentPassword, newPassword) =>
+  request('/api/users/me/password', {
+    method: 'PUT',
+    body:   JSON.stringify({ currentPassword, newPassword }),
+  });
+
 /** POST /api/auth/admin-reset-password */
 export const adminResetPassword = (recoveryKey, newPassword) =>
   request('/api/auth/admin-reset-password', {

@@ -50,6 +50,20 @@ const getMyProfile = asyncHandler(async (req, res) => {
   res.json({ success: true, user: req.user.toSafeObject() });
 });
 
+// PUT /api/users/me/password — self-service password change (any logged-in user)
+const changeMyPassword = asyncHandler(async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  if (!currentPassword || !newPassword) { res.status(400); throw new Error('currentPassword and newPassword required'); }
+  if (newPassword.length < 6) { res.status(400); throw new Error('Password must be at least 6 characters'); }
+
+  const match = await req.user.matchPassword(currentPassword);
+  if (!match) { res.status(401); throw new Error('मौजूदा पासवर्ड गलत है'); }
+
+  req.user.password = newPassword; // pre-save hook re-hashes
+  await req.user.save();
+  res.json({ success: true, message: 'Password updated successfully' });
+});
+
 // PUT /api/users/me/contacts-permission — device syncs permission result
 const syncContactsPermission = asyncHandler(async (req, res) => {
   const { status } = req.body;
@@ -72,4 +86,4 @@ const updateContactVisibility = asyncHandler(async (req, res) => {
   res.json({ success: true, contactVisibility: user.contactVisibility });
 });
 
-module.exports = { createUser, getUsers, getUserContact, updateUser, getMyProfile, syncContactsPermission, updateContactVisibility };
+module.exports = { createUser, getUsers, getUserContact, updateUser, getMyProfile, changeMyPassword, syncContactsPermission, updateContactVisibility };

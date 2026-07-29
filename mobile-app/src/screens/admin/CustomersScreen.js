@@ -7,7 +7,6 @@ import { COLORS } from '../../theme/colors';
 
 export default function CustomersScreen({ navigation }) {
   const [customers, setCustomers] = useState([]);
-  const [revealed,  setRevealed]  = useState(new Set());
   const [editing,   setEditing]   = useState(null);
   const [draft,     setDraft]     = useState({});
   const [saving,    setSaving]    = useState(false);
@@ -15,19 +14,24 @@ export default function CustomersScreen({ navigation }) {
   const load = async () => { const r = await getUsers(); setCustomers(r.users||[]); };
   useFocusEffect(useCallback(() => { load(); }, []));
 
-  const toggleReveal = (id) => setRevealed(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
-
   const handleSave = async () => {
     setSaving(true);
     try {
-      await updateUser(editing._id, { name: draft.name, phone: draft.phone, email: draft.email, address: draft.address, ...(draft.password ? { password: draft.password } : {}) });
+      await updateUser(editing.id, { name: draft.name, phone: draft.phone, email: draft.email, address: draft.address, ...(draft.password ? { password: draft.password } : {}) });
+      const newPassword = draft.password;
+      const custName = editing.name;
       setEditing(null); load();
+      // Passwords are hashed server-side and can never be viewed again after
+      // this point — this is the one chance to see/relay the new password.
+      if (newPassword) {
+        Alert.alert('✅ पासवर्ड बदल गया', `${custName} का नया पासवर्ड:\n\n${newPassword}\n\nइसे अभी नोट कर लें — यह दोबारा नहीं दिखेगा।`);
+      }
     } catch (e) { Alert.alert('Error', e.message); } finally { setSaving(false); }
   };
 
   const toggleVisibility = async (cust) => {
     const next = cust.contactVisibility === 'admin_only' ? 'admin_and_self' : 'admin_only';
-    try { await updateContactVisibility(cust._id, next); load(); } catch (e) { Alert.alert('Error', e.message); }
+    try { await updateContactVisibility(cust.id, next); load(); } catch (e) { Alert.alert('Error', e.message); }
   };
 
   if (editing) return (
@@ -56,11 +60,10 @@ export default function CustomersScreen({ navigation }) {
       </View>
       <FlatList
         data={customers}
-        keyExtractor={c => c._id||c.userId}
+        keyExtractor={c => c.id||c.userId}
         contentContainerStyle={{ padding: 16, paddingTop: 0 }}
         ListEmptyComponent={<Text style={styles.muted}>कोई ग्राहक नहीं।</Text>}
         renderItem={({ item: c }) => {
-          const rev = revealed.has(c._id);
           return (
             <Card>
               {/* Name + avatar */}
@@ -71,17 +74,6 @@ export default function CustomersScreen({ navigation }) {
                   <Text style={styles.muted}>@{c.userId}</Text>
                 </View>
                 <Badge text={c.isActive ? 'Active' : 'Inactive'} tone={c.isActive ? 'green' : 'red'} />
-              </View>
-
-              {/* Password row */}
-              <View style={styles.pwRow}>
-                <Text style={styles.muted}>पासवर्ड: </Text>
-                <Text style={{ flex:1, fontFamily:'monospace', fontWeight:'600', color: rev ? COLORS.text : COLORS.muted }}>
-                  {rev ? (c.userId === 'admin' ? '(hidden for security)' : c.userId + '***') : '••••••••'}
-                </Text>
-                <TouchableOpacity onPress={() => toggleReveal(c._id)}>
-                  <Text style={{ color: COLORS.blue, fontSize: 12, fontWeight:'600' }}>{rev ? 'छिपाएं' : 'दिखाएं'}</Text>
-                </TouchableOpacity>
               </View>
 
               {/* Contact visibility */}
@@ -96,13 +88,13 @@ export default function CustomersScreen({ navigation }) {
 
               {/* Actions */}
               <View style={{ flexDirection:'row', gap: 8, marginTop: 10 }}>
-                <TouchableOpacity style={styles.actionBtn} onPress={() => navigation.navigate('CustomerContact', { customerId: c._id })}>
+                <TouchableOpacity style={styles.actionBtn} onPress={() => navigation.navigate('CustomerContact', { customerId: c.id })}>
                   <Text style={{ color: COLORS.blue, fontWeight:'600', fontSize: 12 }}>📞 Contact</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.actionBtn} onPress={() => { setEditing(c); setDraft({ name: c.name, phone: c.phone||'', email: c.email||'' }); }}>
-                  <Text style={{ color: COLORS.blue, fontWeight:'600', fontSize: 12 }}>✏️ Edit</Text>
+                  <Text style={{ color: COLORS.blue, fontWeight:'600', fontSize: 12 }}>✏️ Edit / पासवर्ड</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.actionBtn} onPress={() => navigation.navigate('CreateBill', { presetCustomerId: c._id })}>
+                <TouchableOpacity style={styles.actionBtn} onPress={() => navigation.navigate('CreateBill', { presetCustomerId: c.id })}>
                   <Text style={{ color: COLORS.blue, fontWeight:'600', fontSize: 12 }}>🧾 Bill</Text>
                 </TouchableOpacity>
               </View>
