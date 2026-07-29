@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, Alert, StyleSheet } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
-import { changeMyPassword } from '../../services/api';
+import { changeMyPassword, getRecoveryKeyHint } from '../../services/api';
 import { Card, Badge, Button, Input } from '../../components/UI';
 import { COLORS } from '../../theme/colors';
 
@@ -29,6 +29,18 @@ export default function SettingsScreen({ navigation }) {
       setPwForm({ currentPassword:'', newPassword:'', confirmPassword:'' });
       Alert.alert('✅ सफल', 'आपका पासवर्ड बदल दिया गया है।');
     } catch (e) { setPwError(e.message); } finally { setPwSaving(false); }
+  };
+
+  const showRecoveryKey = async () => {
+    try {
+      const { recoveryKey } = await getRecoveryKeyHint();
+      Alert.alert(
+        '🔑 Admin Recovery Key',
+        recoveryKey
+          ? `${recoveryKey}\n\nइसे कहीं सुरक्षित नोट कर लें (जैसे कागज़ पर या password manager में) — अगर आप कभी अपना पासवर्ड भूल जाएं तो इसी key से admin account वापस पाया जा सकता है। इसे किसी और के साथ शेयर न करें।`
+          : 'Recovery key सेट नहीं है (.env में ADMIN_RECOVERY_KEY missing है)।'
+      );
+    } catch (e) { Alert.alert('Error', e.message); }
   };
 
   if (changingPw) return (
@@ -74,6 +86,10 @@ export default function SettingsScreen({ navigation }) {
           ))}
           <TouchableOpacity style={styles.settingRow} onPress={() => setChangingPw(true)}>
             <Text style={styles.settingLabel}>🔑 अपना पासवर्ड बदलें</Text>
+            <Text style={{ color: COLORS.muted }}>›</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.settingRow} onPress={showRecoveryKey}>
+            <Text style={styles.settingLabel}>🗝️ Recovery Key देखें</Text>
             <Text style={{ color: COLORS.muted }}>›</Text>
           </TouchableOpacity>
         </>

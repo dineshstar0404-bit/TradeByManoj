@@ -39,4 +39,11 @@ const adminResetPassword = asyncHandler(async (req, res) => {
   res.json({ success: true, message: 'Admin password updated successfully' });
 });
 
-module.exports = { login, getMe, adminResetPassword };
+// GET /api/auth/recovery-key — lets an already-logged-in admin note down the
+// recovery key for later use. Never exposed pre-login (see requireRole('admin')
+// on the route) — that would let anyone reset the admin account without a password.
+const getRecoveryKeyHint = asyncHandler(async (req, res) => {
+  res.json({ success: true, recoveryKey: process.env.ADMIN_RECOVERY_KEY || '' });
+});
+
+module.exports = { login, getMe, adminResetPassword, getRecoveryKeyHint };

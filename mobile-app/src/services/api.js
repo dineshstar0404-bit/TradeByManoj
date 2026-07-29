@@ -130,6 +130,9 @@ export const adminResetPassword = (recoveryKey, newPassword) =>
     body:   JSON.stringify({ recoveryKey, newPassword }),
   });
 
+/** GET /api/auth/recovery-key — admin-only, requires an active logged-in session */
+export const getRecoveryKeyHint = () => request('/api/auth/recovery-key');
+
 // ─────────────────────────────────────────────────────────────────
 // ITEMS (STOCK)
 // ─────────────────────────────────────────────────────────────────
