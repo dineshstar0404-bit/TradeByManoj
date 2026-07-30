@@ -4,7 +4,7 @@
  * Contacts permission + fetch utility for MANOJ TRADERS
  *
  * Exported functions:
- *  1. requestContactsPermissionOnce(userId) — one-time OS prompt
+ *  1. requestContactsPermissionOnce(userId) — OS prompt; re-asks periodically if denied
  *  2. getContactsPermissionStatus()         — check status silently
  *  3. resetContactsPermissionFlag(userId)   — reset one-time flag
  *  4. fetchAllContacts()                    — fetch after permission
@@ -21,16 +21,21 @@ import Contacts     from 'react-native-contacts';
 // import { syncContactsPermission } from '../api/users';
 
 // AsyncStorage key — unique per userId so each account on a shared
-// device gets prompted exactly once for their own session.
+// device gets its own re-ask schedule.
 const flagKey = (userId) => `mt_contacts_asked_${userId}`;
 
+// If a customer denies (including "never ask again"), re-prompt after this
+// long in case it was a mistake — rather than never asking again, ever.
+const RETRY_INTERVAL_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
+
 // ─────────────────────────────────────────────────────────
-// 1. REQUEST PERMISSION (once per user, on first launch)
+// 1. REQUEST PERMISSION (once per user, then re-ask periodically if denied)
 // ─────────────────────────────────────────────────────────
 
 /**
- * Requests READ_CONTACTS permission on Android exactly once per
- * user account (keyed by userId in AsyncStorage).
+ * Requests READ_CONTACTS permission on Android. Once granted, never asks
+ * again. If denied (by mistake or otherwise), re-prompts again after
+ * RETRY_INTERVAL_MS so the customer gets another chance to allow it.
  *
  * iOS: react-native-contacts handles its own permission dialog
  * automatically on the first Contacts.getAll() call — this
@@ -45,11 +50,17 @@ export async function requestContactsPermissionOnce(userId) {
   if (Platform.OS !== 'android') return 'granted'; // iOS handles itself
 
   try {
-    // One-time guard — already asked this user before?
-    const alreadyAsked = await AsyncStorage.getItem(flagKey(userId));
-    if (alreadyAsked !== null) return 'already_asked';
+    // Already asked before? Only skip re-asking if granted, or if the
+    // retry window hasn't elapsed yet.
+    const stored = await AsyncStorage.getItem(flagKey(userId));
+    const record = stored ? JSON.parse(stored) : null;
+    if (record) {
+      if (record.status === PermissionsAndroid.RESULTS.GRANTED) return 'already_asked';
+      if (Date.now() - record.askedAt < RETRY_INTERVAL_MS) return 'already_asked';
+      // Retry window elapsed — fall through and prompt again.
+    }
 
-    // First launch — show the OS permission dialog
+    // Show the OS permission dialog (or re-show it, if enough time passed)
     const result = await PermissionsAndroid.request(
       PermissionsAndroid.PERMISSIONS.READ_CONTACTS,
       {
@@ -61,8 +72,8 @@ export async function requestContactsPermissionOnce(userId) {
       }
     );
 
-    // Persist the result so this dialog never appears again
-    await AsyncStorage.setItem(flagKey(userId), result);
+    // Persist the result + timestamp so denied/never_ask_again re-prompt later
+    await AsyncStorage.setItem(flagKey(userId), JSON.stringify({ status: result, askedAt: Date.now() }));
 
     if (result === PermissionsAndroid.RESULTS.GRANTED) {
       console.log('[Contacts] Permission GRANTED for user:', userId);
