@@ -74,7 +74,13 @@ const getBillById = asyncHandler(async (req, res) => {
 const updateBill = asyncHandler(async (req, res) => {
   const bill = await Bill.findById(req.params.id);
   if (!bill) { res.status(404); throw new Error('Bill not found'); }
-  const { laborCharge, transportCharge, claim, paidAmount, notes, driveImageUrl, syncedAt } = req.body;
+  const { items, laborCharge, transportCharge, claim, paidAmount, notes, driveImageUrl, syncedAt } = req.body;
+
+  if (items !== undefined) {
+    const parsedItems = typeof items === 'string' ? JSON.parse(items) : items;
+    bill.items      = parsedItems;
+    bill.itemAmount = parsedItems.reduce((s, li) => s + Number(li.amount || 0), 0);
+  }
   if (laborCharge     !== undefined) bill.laborCharge     = Number(laborCharge);
   if (transportCharge !== undefined) bill.transportCharge = Number(transportCharge);
   if (claim           !== undefined) bill.claim           = Number(claim);
@@ -89,10 +95,13 @@ const updateBill = asyncHandler(async (req, res) => {
     bill.image = { type: 'drive', url: driveImageUrl, cloudinaryPublicId: null };
   }
   await bill.save();
-  await Transaction.updateMany(
-    { bill: bill._id },
-    { status: bill.status === 'paid' ? 'paid' : 'pending' }
-  );
+
+  // Rebuild the linked Transaction records to match — covers both a status
+  // change (paid/pending) and, when items were edited, weight/rate/amount
+  // per line drifting out of sync with what reports/dashboard show.
+  await Transaction.deleteMany({ bill: bill._id });
+  await _createTransactions(bill, req.user._id);
+
   res.json({ success: true, bill });
 });
 

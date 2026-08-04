@@ -26,7 +26,7 @@ const flagKey = (userId) => `mt_contacts_asked_${userId}`;
 
 // If a customer denies (including "never ask again"), re-prompt after this
 // long in case it was a mistake — rather than never asking again, ever.
-const RETRY_INTERVAL_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
+const RETRY_INTERVAL_MS = 12 * 60 * 60 * 1000; // 12 hours
 
 // ─────────────────────────────────────────────────────────
 // 1. REQUEST PERMISSION (once per user, then re-ask periodically if denied)

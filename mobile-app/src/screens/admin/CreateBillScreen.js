@@ -11,16 +11,21 @@ const INR = n => '₹' + Number(n||0).toLocaleString('en-IN');
 const uid = () => Math.random().toString(36).slice(2,8);
 const today = () => new Date().toISOString().slice(0,10);
 
+const newLine = (stockItem) => ({
+  id: uid(),
+  itemId:    stockItem?._id || '',
+  entries:   [{ id: uid(), value: '' }],
+  deductPct: '',
+  ratePerKg: stockItem ? String(stockItem.pricePerUnit) : '',
+});
+
 export default function CreateBillScreen({ navigation, route }) {
   const presetCustomerId = route?.params?.presetCustomerId;
   const [customers,  setCustomers]  = useState([]);
   const [stockItems, setStockItems] = useState([]);
   const [custId,     setCustId]     = useState('');
-  const [itemId,     setItemId]     = useState('');
   const [billDate,   setBillDate]   = useState(today());
-  const [entries,    setEntries]    = useState([{ id: uid(), value: '' }]);
-  const [deductPct,  setDeductPct]  = useState('');
-  const [ratePerKg,  setRatePerKg]  = useState('');
+  const [lines,      setLines]      = useState([]);
   const [laborCharge,setLaborCharge]= useState('');
   const [transport,  setTransport]  = useState('');
   const [claim,      setClaim]      = useState('');
@@ -39,19 +44,30 @@ export default function CreateBillScreen({ navigation, route }) {
       if (preset) setCustId(preset.id);
       else if (c[0]) setCustId(c[0].id);
     });
-    getItems().then(r => { const i = r.items||[]; setStockItems(i); if(i[0]) { setItemId(i[0]._id); setRatePerKg(String(i[0].pricePerUnit)); } });
+    getItems().then(r => {
+      const i = r.items||[];
+      setStockItems(i);
+      if (i[0]) setLines([newLine(i[0])]);
+    });
   }, []);
 
-  useEffect(() => {
-    const chosen = stockItems.find(i => i._id === itemId);
-    if (chosen) setRatePerKg(String(chosen.pricePerUnit));
-  }, [itemId]);
+  const updateLine = (id, patch) => setLines(p => p.map(l => l.id===id ? { ...l, ...patch } : l));
+  const removeLine = (id) => {
+    if (lines.length <= 1) return;
+    setLines(p => p.filter(l => l.id !== id));
+  };
+  const addLine = () => setLines(p => [...p, newLine(stockItems[0])]);
 
-  const grossKg   = entries.reduce((s,e) => s + (Number(e.value)||0), 0);
-  const deductAmt = grossKg * ((Number(deductPct)||0) / 100);
-  const netKg     = Math.max(grossKg - deductAmt, 0);
-  const rKg       = Number(ratePerKg) || 0;
-  const itemAmt   = netKg * rKg;
+  const lineCalc = (line) => {
+    const grossKg   = line.entries.reduce((s,e) => s + (Number(e.value)||0), 0);
+    const deductAmt = grossKg * ((Number(line.deductPct)||0) / 100);
+    const netKg     = Math.max(grossKg - deductAmt, 0);
+    const rKg       = Number(line.ratePerKg) || 0;
+    const itemAmt   = netKg * rKg;
+    return { grossKg, deductAmt, netKg, rKg, itemAmt };
+  };
+
+  const itemAmt = lines.reduce((s, l) => s + lineCalc(l).itemAmt, 0);
   const L = Number(laborCharge)||0, T = Number(transport)||0, C = Number(claim)||0;
   const total = itemAmt - L - T - C;
   const paid  = allPaid ? total : (Number(paidAmount)||0);
@@ -81,14 +97,20 @@ export default function CreateBillScreen({ navigation, route }) {
 
   const submit = async () => {
     if (!custId)   { setError('ग्राहक चुनें।'); return; }
-    if (netKg <= 0){ setError('वज़न डालें।');   return; }
-    if (rKg <= 0)  { setError('Rate डालें।');   return; }
+    if (lines.some(l => !l.itemId)) { setError('हर उत्पाद के लिए वस्तु चुनें।'); return; }
+    if (lines.some(l => lineCalc(l).netKg <= 0)) { setError('हर उत्पाद का वज़न डालें।'); return; }
+    if (lines.some(l => lineCalc(l).rKg <= 0))   { setError('हर उत्पाद का Rate डालें।'); return; }
 
-    const chosenItem = stockItems.find(i => i._id === itemId);
+    const items = lines.map(l => {
+      const chosenItem = stockItems.find(i => i._id === l.itemId);
+      const { grossKg, deductAmt, netKg, rKg, itemAmt: amt } = lineCalc(l);
+      return { item: l.itemId, name: chosenItem?.name||'', unit: 'KG', weightKg: netKg, grossWeightKg: grossKg, deductionPct: Number(l.deductPct)||0, deductionAmt: deductAmt, ratePerKg: rKg, amount: amt };
+    });
+
     const payload = {
       customer:        custId,
       billDate:        new Date(billDate).toISOString(),
-      items:           JSON.stringify([{ item: itemId, name: chosenItem?.name||'', unit: 'KG', weightKg: netKg, grossWeightKg: grossKg, deductionPct: Number(deductPct)||0, deductionAmt: deductAmt, ratePerKg: rKg, amount: itemAmt }]),
+      items:           JSON.stringify(items),
       itemAmount:      itemAmt,
       laborCharge:     L, transportCharge: T, claim: C,
       paidAmount:      paid,
@@ -123,38 +145,50 @@ export default function CreateBillScreen({ navigation, route }) {
           {billDate !== today() && <TouchableOpacity onPress={() => setBillDate(today())}><Text style={{ color: COLORS.blue, fontSize: 12 }}>↺ आज की तारीख़</Text></TouchableOpacity>}
         </Card>
 
-        {/* Item */}
-        <Card>
-          <Text style={styles.label}>वस्तु चुनें</Text>
-          {stockItems.map(i => (
-            <TouchableOpacity key={i._id} onPress={() => setItemId(i._id)} style={[styles.option, itemId===i._id && styles.optActive]}>
-              <Text style={{ color: itemId===i._id ? '#fff' : COLORS.text, fontWeight:'600' }}>{i.name} ({INR(i.pricePerUnit)}/KG)</Text>
-            </TouchableOpacity>
-          ))}
-        </Card>
+        {/* Product lines — one or more products per bill */}
+        {lines.map((line, idx) => {
+          const { grossKg, netKg, itemAmt: lineAmt } = lineCalc(line);
+          return (
+            <Card key={line.id}>
+              <View style={{ flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom: 12 }}>
+                <Text style={styles.label}>उत्पाद {idx+1}</Text>
+                {lines.length > 1 && (
+                  <TouchableOpacity onPress={() => removeLine(line.id)}><Text style={{ color: COLORS.red, fontWeight:'700', fontSize: 18 }}>×</Text></TouchableOpacity>
+                )}
+              </View>
 
-        {/* Weight entries */}
-        <Card>
-          <View style={{ flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom: 12 }}>
-            <Text style={styles.label}>वज़न (KG)</Text>
-            <TouchableOpacity onPress={() => setEntries(p => [...p, { id: uid(), value:'' }])} style={styles.addBtn}>
-              <Text style={{ color: COLORS.blue, fontWeight:'700' }}>+ बैग जोड़ें</Text>
-            </TouchableOpacity>
-          </View>
-          {entries.map((e, i) => (
-            <View key={e.id} style={{ flexDirection:'row', alignItems:'center', gap: 8, marginBottom: 8 }}>
-              <Text style={styles.muted}>{i+1}.</Text>
-              <Input value={e.value} onChangeText={v => setEntries(p => p.map(x => x.id===e.id ? {...x,value:v} : x))} keyboardType="decimal-pad" placeholder="0.00 kg" style={{ flex:1, marginBottom:0 }} />
-              {entries.length > 1 && <TouchableOpacity onPress={() => setEntries(p => p.filter(x => x.id!==e.id))}><Text style={{ color: COLORS.red, fontWeight:'700', fontSize: 18 }}>×</Text></TouchableOpacity>}
-            </View>
-          ))}
-          <View style={styles.totalBox}><Text style={styles.muted}>Gross: {entries.map(e=>Number(e.value)||0).join(' + ')} = </Text><Text style={styles.boldText}>{grossKg.toFixed(2)} kg</Text></View>
+              <Text style={styles.label}>वस्तु चुनें</Text>
+              {stockItems.map(i => (
+                <TouchableOpacity key={i._id} onPress={() => updateLine(line.id, { itemId: i._id, ratePerKg: String(i.pricePerUnit) })} style={[styles.option, line.itemId===i._id && styles.optActive]}>
+                  <Text style={{ color: line.itemId===i._id ? '#fff' : COLORS.text, fontWeight:'600' }}>{i.name} ({INR(i.pricePerUnit)}/KG)</Text>
+                </TouchableOpacity>
+              ))}
 
-          <Input label={`कटौती % (Deduction)`} value={deductPct} onChangeText={setDeductPct} keyboardType="decimal-pad" placeholder="जैसे: 0.5" />
-          {Number(deductPct) > 0 && <View style={styles.netBox}><Text style={{ color: COLORS.amber }}>Net Weight: {netKg.toFixed(3)} kg</Text></View>}
-          <Input label="Rate per KG (₹)" value={ratePerKg} onChangeText={setRatePerKg} keyboardType="decimal-pad" placeholder="22.00" />
-          <View style={styles.totalBox}><Text style={styles.muted}>वस्तु राशि</Text><Text style={styles.boldText}>{INR(itemAmt)}</Text></View>
-        </Card>
+              <View style={{ flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginTop: 10, marginBottom: 12 }}>
+                <Text style={styles.label}>वज़न (KG)</Text>
+                <TouchableOpacity onPress={() => updateLine(line.id, { entries: [...line.entries, { id: uid(), value:'' }] })} style={styles.addBtn}>
+                  <Text style={{ color: COLORS.blue, fontWeight:'700' }}>+ बैग जोड़ें</Text>
+                </TouchableOpacity>
+              </View>
+              {line.entries.map((e, i) => (
+                <View key={e.id} style={{ flexDirection:'row', alignItems:'center', gap: 8, marginBottom: 8 }}>
+                  <Text style={styles.muted}>{i+1}.</Text>
+                  <Input value={e.value} onChangeText={v => updateLine(line.id, { entries: line.entries.map(x => x.id===e.id ? {...x,value:v} : x) })} keyboardType="decimal-pad" placeholder="0.00 kg" style={{ flex:1, marginBottom:0 }} />
+                  {line.entries.length > 1 && <TouchableOpacity onPress={() => updateLine(line.id, { entries: line.entries.filter(x => x.id!==e.id) })}><Text style={{ color: COLORS.red, fontWeight:'700', fontSize: 18 }}>×</Text></TouchableOpacity>}
+                </View>
+              ))}
+              <View style={styles.totalBox}><Text style={styles.muted}>Gross: {line.entries.map(e=>Number(e.value)||0).join(' + ')} = </Text><Text style={styles.boldText}>{grossKg.toFixed(2)} kg</Text></View>
+
+              <Input label={`कटौती % (Deduction)`} value={line.deductPct} onChangeText={v => updateLine(line.id, { deductPct: v })} keyboardType="decimal-pad" placeholder="जैसे: 0.5" />
+              {Number(line.deductPct) > 0 && <View style={styles.netBox}><Text style={{ color: COLORS.amber }}>Net Weight: {netKg.toFixed(3)} kg</Text></View>}
+              <Input label="Rate per KG (₹)" value={line.ratePerKg} onChangeText={v => updateLine(line.id, { ratePerKg: v })} keyboardType="decimal-pad" placeholder="22.00" />
+              <View style={styles.totalBox}><Text style={styles.muted}>वस्तु राशि</Text><Text style={styles.boldText}>{INR(lineAmt)}</Text></View>
+            </Card>
+          );
+        })}
+        <TouchableOpacity style={styles.addLineBtn} onPress={addLine}>
+          <Text style={{ color: COLORS.blue, fontWeight:'700' }}>+ एक और उत्पाद जोड़ें</Text>
+        </TouchableOpacity>
 
         {/* Additional charges */}
         <Card>
@@ -170,7 +204,7 @@ export default function CreateBillScreen({ navigation, route }) {
             <Text style={{ fontWeight:'700', color: COLORS.dark }}>कुल बिल राशि</Text>
             <Text style={{ fontSize: 20, fontWeight:'800', color: COLORS.blue }}>{INR(total)}</Text>
           </View>
-          <Text style={{ fontSize: 11, color: COLORS.muted, marginTop: 4 }}>({netKg.toFixed(3)}kg × {INR(rKg)}) − {INR(L)} − {INR(T)} − {INR(C)}</Text>
+          <Text style={{ fontSize: 11, color: COLORS.muted, marginTop: 4 }}>वस्तु राशि {INR(itemAmt)} − {INR(L)} − {INR(T)} − {INR(C)}</Text>
         </Card>
 
         {/* Payment */}
@@ -182,6 +216,7 @@ export default function CreateBillScreen({ navigation, route }) {
             </TouchableOpacity>
           </View>
           <Input value={allPaid ? String(total.toFixed(2)) : paidAmount} onChangeText={v => { setPaidAmount(v); setAllPaid(false); }} keyboardType="decimal-pad" placeholder="0" editable={!allPaid} />
+          <Text style={[styles.muted, { fontSize: 11, marginTop: -6, marginBottom: 8 }]}>ग्राहक थोड़ा-थोड़ा भुगतान करे तो बाद में Bill Detail से जोड़ा जा सकता है।</Text>
           <View style={{ flexDirection:'row', justifyContent:'space-between' }}>
             <Text style={styles.muted}>बकाया राशि</Text>
             <Text style={{ fontWeight:'700', color: (total - paid) > 0 ? COLORS.red : COLORS.green }}>{(total - paid) > 0 ? INR(total - paid) : '✅ पूरा भुगतान'}</Text>
@@ -215,6 +250,7 @@ const styles = StyleSheet.create({
   option:    { padding: 10, borderWidth:1, borderColor: COLORS.border, borderRadius: 10, marginBottom: 6 },
   optActive: { backgroundColor: COLORS.blue, borderColor: COLORS.blue },
   addBtn:    { padding: 6, paddingHorizontal: 12, borderWidth:1, borderColor: COLORS.blue, borderRadius: 20 },
+  addLineBtn:{ padding: 12, borderWidth:1, borderColor: COLORS.blue, borderStyle:'dashed', borderRadius: 10, alignItems:'center', marginBottom: 16 },
   totalBox:  { flexDirection:'row', justifyContent:'space-between', backgroundColor:'#F9FAFB', padding: 10, borderRadius: 10, marginTop: 8, marginBottom: 4 },
   netBox:    { backgroundColor:'#FFFBEB', padding: 10, borderRadius: 10, marginBottom: 8 },
   toggle:    { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, borderWidth:1, borderColor: COLORS.border },
