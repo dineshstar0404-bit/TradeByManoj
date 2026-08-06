@@ -170,7 +170,7 @@ export default function BillDetailScreen({ route, navigation }) {
           {isAdmin && editing ? (
             <>
               {[['laborCharge','लेबर चार्ज'],['transportCharge','ट्रांसपोर्ट'],['claim','क्लेम/डिस्काउंट']].map(([k,l]) => (
-                <Input key={k} label={l} value={String(draft[k]||'')} onChangeText={v => setDraft(d=>({...d,[k]:Number(v)||0}))} keyboardType="numeric" />
+                <Input key={k} label={l} value={String(draft[k]||'')} onChangeText={v => setDraft(d=>({...d,[k]:Number(v)||0}))} keyboardType="decimal-pad" />
               ))}
             </>
           ) : (
@@ -198,7 +198,7 @@ export default function BillDetailScreen({ route, navigation }) {
                   <Text style={{ color: allPaid ? '#fff' : COLORS.muted, fontSize: 12, fontWeight:'600' }}>All Paid</Text>
                 </TouchableOpacity>
               </View>
-              <Input value={allPaid ? String(liveTotal.toFixed(2)) : String(draft.paidAmount||'')} onChangeText={v => { setDraft(d=>({...d,paidAmount:Number(v)||0})); setAllPaid(false); }} keyboardType="numeric" editable={!allPaid} />
+              <Input value={allPaid ? String(liveTotal.toFixed(2)) : String(draft.paidAmount||'')} onChangeText={v => { setDraft(d=>({...d,paidAmount:Number(v)||0})); setAllPaid(false); }} keyboardType="decimal-pad" editable={!allPaid} />
               <Text style={[styles.muted, { fontSize: 11, marginTop: -6, marginBottom: 8 }]}>ग्राहक थोड़ा-थोड़ा भुगतान करे तो यहाँ कुल जमा राशि अपडेट करें।</Text>
             </>
           ) : (

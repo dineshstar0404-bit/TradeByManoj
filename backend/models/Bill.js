@@ -44,11 +44,15 @@ const billSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Auto-compute status before save
+// Auto-compute status before save. Rounded to paise before comparing —
+// weightKg × ratePerKg can leave binary-float noise past 2 decimals, which
+// otherwise leaves an actually-fully-paid decimal bill stuck as "partial".
 billSchema.pre('save', function (next) {
-  if (this.paidAmount >= this.totalAmount && this.totalAmount > 0) this.status = 'paid';
-  else if (this.paidAmount > 0)                                     this.status = 'partial';
-  else                                                               this.status = 'pending';
+  const paid  = Math.round((this.paidAmount  || 0) * 100) / 100;
+  const total = Math.round((this.totalAmount || 0) * 100) / 100;
+  if (paid >= total && total > 0) this.status = 'paid';
+  else if (paid > 0)               this.status = 'partial';
+  else                              this.status = 'pending';
   next();
 });
 
