@@ -96,7 +96,7 @@ export default function SettingsScreen({ navigation }) {
       )}
 
       <Text style={styles.section}>ऐप जानकारी</Text>
-      <Card><Text style={{ color: COLORS.muted, fontSize:12 }}>MANOJ TRADERS · v1.0.0{'\n'}जलालपुर, अंबेडकर नगर, उ.प्र.</Text></Card>
+      <Card><Text style={{ color: COLORS.muted, fontSize:12 }}>MANOJ TRADERS · v1.0.1{'\n'}जलालपुर, अंबेडकर नगर, उ.प्र.</Text></Card>
 
       <View style={{ marginTop: 'auto', paddingTop: 20 }}>
         <Button title="🚪 लॉग आउट" variant="danger" onPress={confirmLogout} />

@@ -2,7 +2,7 @@
   "expo": {
     "name": "मनोज ट्रेडर्स",
     "slug": "manoj-traders",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -10,18 +10,20 @@
       "backgroundColor": "#004AAD"
     },
     "android": {
+      "versionCode": 2,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#004AAD"
       },
       "package": "com.manojtraders.app",
       "permissions": [
-        "READ_CONTACTS",
-        "WRITE_CONTACTS",
-        "CAMERA",
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE",
-        "READ_MEDIA_IMAGES"
+        "android.permission.READ_CONTACTS",
+        "android.permission.WRITE_CONTACTS",
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "ios": {
@@ -37,7 +39,11 @@
       "expo-image-picker"
     ],
     "extra": {
-      "apiBaseUrl": "https://myserver.com"
-    }
+      "apiBaseUrl": "https://trade-by-manoj.vercel.app",
+      "eas": {
+        "projectId": "13a10055-2659-4fcb-a5fb-a41d899e1fa4"
+      }
+    },
+    "owner": "abhishek9415"
   }
 }
