@@ -197,6 +197,21 @@ export const updateBill = async (id, payload, photoAsset = null) => {
   return request(`/api/bills/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
 };
 
+/** POST /api/bills/:id/payments — log an installment */
+export const addBillPayment = (billId, payload) =>
+  request(`/api/bills/${billId}/payments`, { method: 'POST', body: JSON.stringify(payload) });
+
+/** DELETE /api/bills/:id/payments/:paymentId — undo a mistaken installment */
+export const removeBillPayment = (billId, paymentId) =>
+  request(`/api/bills/${billId}/payments/${paymentId}`, { method: 'DELETE' });
+
+// ─────────────────────────────────────────────────────────────────
+// SETTINGS (admin-only)
+// ─────────────────────────────────────────────────────────────────
+
+export const getBillNumberSettings    = ()          => request('/api/settings/bill-number');
+export const updateBillNumberSettings = (payload)    => request('/api/settings/bill-number', { method: 'PUT', body: JSON.stringify(payload) });
+
 // ─────────────────────────────────────────────────────────────────
 // USERS
 // ─────────────────────────────────────────────────────────────────

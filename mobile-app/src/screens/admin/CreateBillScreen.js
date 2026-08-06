@@ -11,11 +11,14 @@ const INR = n => '₹' + Number(n||0).toLocaleString('en-IN');
 const uid = () => Math.random().toString(36).slice(2,8);
 const today = () => new Date().toISOString().slice(0,10);
 
+const PAYMENT_MODES = [['cash','नकद'],['upi','UPI'],['bank','बैंक'],['other','अन्य']];
+
 const newLine = (stockItem) => ({
   id: uid(),
   itemId:    stockItem?._id || '',
   entries:   [{ id: uid(), value: '' }],
   deductPct: '',
+  claimPct:  '',
   ratePerKg: stockItem ? String(stockItem.pricePerUnit) : '',
 });
 
@@ -31,6 +34,7 @@ export default function CreateBillScreen({ navigation, route }) {
   const [claim,      setClaim]      = useState('');
   const [paidAmount, setPaidAmount] = useState('');
   const [allPaid,    setAllPaid]    = useState(false);
+  const [paymentMode,setPaymentMode]= useState('cash');
   const [photo,      setPhoto]      = useState(null);
   const [driveUrl,   setDriveUrl]   = useState('');
   const [saving,     setSaving]     = useState(false);
@@ -63,11 +67,13 @@ export default function CreateBillScreen({ navigation, route }) {
     const deductAmt = grossKg * ((Number(line.deductPct)||0) / 100);
     const netKg     = Math.max(grossKg - deductAmt, 0);
     const rKg       = Number(line.ratePerKg) || 0;
-    const itemAmt   = netKg * rKg;
-    return { grossKg, deductAmt, netKg, rKg, itemAmt };
+    const grossAmt  = netKg * rKg;
+    const claimAmt  = grossAmt * ((Number(line.claimPct)||0) / 100);
+    const amount    = Math.max(grossAmt - claimAmt, 0);
+    return { grossKg, deductAmt, netKg, rKg, claimAmt, amount };
   };
 
-  const itemAmt = lines.reduce((s, l) => s + lineCalc(l).itemAmt, 0);
+  const itemAmt = lines.reduce((s, l) => s + lineCalc(l).amount, 0);
   const L = Number(laborCharge)||0, T = Number(transport)||0, C = Number(claim)||0;
   const total = itemAmt - L - T - C;
   const paid  = allPaid ? total : (Number(paidAmount)||0);
@@ -103,8 +109,8 @@ export default function CreateBillScreen({ navigation, route }) {
 
     const items = lines.map(l => {
       const chosenItem = stockItems.find(i => i._id === l.itemId);
-      const { grossKg, deductAmt, netKg, rKg, itemAmt: amt } = lineCalc(l);
-      return { item: l.itemId, name: chosenItem?.name||'', unit: 'KG', weightKg: netKg, grossWeightKg: grossKg, deductionPct: Number(l.deductPct)||0, deductionAmt: deductAmt, ratePerKg: rKg, amount: amt };
+      const { grossKg, deductAmt, netKg, rKg, claimAmt, amount: amt } = lineCalc(l);
+      return { item: l.itemId, name: chosenItem?.name||'', unit: 'KG', weightKg: netKg, grossWeightKg: grossKg, deductionPct: Number(l.deductPct)||0, deductionAmt: deductAmt, claimPct: Number(l.claimPct)||0, claimAmt, ratePerKg: rKg, amount: amt };
     });
 
     const payload = {
@@ -114,14 +120,15 @@ export default function CreateBillScreen({ navigation, route }) {
       itemAmount:      itemAmt,
       laborCharge:     L, transportCharge: T, claim: C,
       paidAmount:      paid,
+      paymentMode,
       notes:           '',
       driveImageUrl:   driveUrl.trim(),
     };
 
     setSaving(true); setError('');
     try {
-      await createBill(payload, photo);
-      Alert.alert('✅ सफल', 'बिल सफलतापूर्वक बन गया!', [{ text: 'ठीक है', onPress: () => navigation.goBack() }]);
+      const res = await createBill(payload, photo);
+      Alert.alert('✅ सफल', `बिल नंबर: ${res.bill.billNumber || '—'}\nबिल सफलतापूर्वक बन गया!`, [{ text: 'ठीक है', onPress: () => navigation.goBack() }]);
     } catch (e) { setError(e.message); }
     finally { setSaving(false); }
   };
@@ -147,7 +154,7 @@ export default function CreateBillScreen({ navigation, route }) {
 
         {/* Product lines — one or more products per bill */}
         {lines.map((line, idx) => {
-          const { grossKg, netKg, itemAmt: lineAmt } = lineCalc(line);
+          const { grossKg, netKg, amount: lineAmt } = lineCalc(line);
           return (
             <Card key={line.id}>
               <View style={{ flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom: 12 }}>
@@ -182,6 +189,7 @@ export default function CreateBillScreen({ navigation, route }) {
               <Input label={`कटौती % (Deduction)`} value={line.deductPct} onChangeText={v => updateLine(line.id, { deductPct: v })} keyboardType="decimal-pad" placeholder="जैसे: 0.5" />
               {Number(line.deductPct) > 0 && <View style={styles.netBox}><Text style={{ color: COLORS.amber }}>Net Weight: {netKg.toFixed(3)} kg</Text></View>}
               <Input label="Rate per KG (₹)" value={line.ratePerKg} onChangeText={v => updateLine(line.id, { ratePerKg: v })} keyboardType="decimal-pad" placeholder="22.00" />
+              <Input label="क्लेम % (Claim)" value={line.claimPct} onChangeText={v => updateLine(line.id, { claimPct: v })} keyboardType="decimal-pad" placeholder="जैसे: 1" />
               <View style={styles.totalBox}><Text style={styles.muted}>वस्तु राशि</Text><Text style={styles.boldText}>{INR(lineAmt)}</Text></View>
             </Card>
           );
@@ -216,6 +224,15 @@ export default function CreateBillScreen({ navigation, route }) {
             </TouchableOpacity>
           </View>
           <Input value={allPaid ? String(total.toFixed(2)) : paidAmount} onChangeText={v => { setPaidAmount(v); setAllPaid(false); }} keyboardType="decimal-pad" placeholder="0" editable={!allPaid} />
+          {paid > 0 && (
+            <View style={{ flexDirection:'row', gap: 6, marginBottom: 10 }}>
+              {PAYMENT_MODES.map(([k,l]) => (
+                <TouchableOpacity key={k} onPress={() => setPaymentMode(k)} style={[styles.modeChip, paymentMode===k && styles.optActive]}>
+                  <Text style={{ color: paymentMode===k ? '#fff' : COLORS.text, fontSize: 12, fontWeight:'600' }}>{l}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
           <Text style={[styles.muted, { fontSize: 11, marginTop: -6, marginBottom: 8 }]}>ग्राहक थोड़ा-थोड़ा भुगतान करे तो बाद में Bill Detail से जोड़ा जा सकता है।</Text>
           <View style={{ flexDirection:'row', justifyContent:'space-between' }}>
             <Text style={styles.muted}>बकाया राशि</Text>
@@ -254,5 +271,6 @@ const styles = StyleSheet.create({
   totalBox:  { flexDirection:'row', justifyContent:'space-between', backgroundColor:'#F9FAFB', padding: 10, borderRadius: 10, marginTop: 8, marginBottom: 4 },
   netBox:    { backgroundColor:'#FFFBEB', padding: 10, borderRadius: 10, marginBottom: 8 },
   toggle:    { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, borderWidth:1, borderColor: COLORS.border },
+  modeChip:  { flex:1, paddingVertical: 8, borderRadius: 8, borderWidth:1, borderColor: COLORS.border, alignItems:'center' },
   photoBtn:  { flex:1, padding: 12, borderWidth:1, borderColor: COLORS.blue, borderRadius: 10, alignItems:'center' },
 });

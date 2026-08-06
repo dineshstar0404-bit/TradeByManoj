@@ -18,6 +18,7 @@ import CreateCustomerScreen from '../screens/admin/CreateCustomerScreen';
 import { CustomerContactScreen }   from '../screens/admin/CustomerContactScreen';
 import { ContactSettingsPinScreen, ContactDirectoryScreen } from '../screens/admin/ContactSettingsScreens';
 import { DownloadTrackerGateScreen, DownloadTrackerListScreen } from '../screens/admin/DownloadTrackerScreens';
+import BillNumberSettingsScreen from '../screens/admin/BillNumberSettingsScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -47,6 +48,7 @@ export default function RootNavigator() {
             <Stack.Screen name="Customers"      component={CustomersScreen}      options={{ ...headerStyle, headerShown:true, title:'ग्राहक सूची' }} />
             <Stack.Screen name="CreateCustomer" component={CreateCustomerScreen} options={{ ...headerStyle, headerShown:true, title:'नया ग्राहक जोड़ें' }} />
             <Stack.Screen name="CustomerContact" component={CustomerContactScreen} options={{ ...headerStyle, headerShown:true, title:'संपर्क जानकारी' }} />
+            <Stack.Screen name="BillNumberSettings" component={BillNumberSettingsScreen} options={{ ...headerStyle, headerShown:true, title:'🧾 Bill Number सेटिंग्स' }} />
 
             {/* Contact Settings (PIN gated) */}
             <Stack.Screen name="ContactGate"      component={ContactSettingsPinScreen} options={{ ...headerStyle, headerShown:true, title:'Contact Settings' }} />

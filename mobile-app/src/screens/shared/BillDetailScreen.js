@@ -1,12 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, Alert, StyleSheet, TouchableOpacity, Linking } from 'react-native';
-import { getBill, updateBill, deleteBill, getItems } from '../../services/api';
+import { getBill, updateBill, deleteBill, getItems, addBillPayment, removeBillPayment } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { Card, Badge, Button, Input, ErrorMessage } from '../../components/UI';
 import { COLORS } from '../../theme/colors';
+import { buildAndShareInvoicePdf } from '../../utils/invoicePdf';
 
 const INR = n => '₹' + Number(n||0).toLocaleString('en-IN');
 const uid = () => Math.random().toString(36).slice(2,8);
+const today = () => new Date().toISOString().slice(0,10);
+const PAYMENT_MODES = [['cash','नकद'],['upi','UPI'],['bank','बैंक'],['other','अन्य']];
+const MODE_LABEL = Object.fromEntries(PAYMENT_MODES);
 
 export default function BillDetailScreen({ route, navigation }) {
   const { billId } = route.params;
@@ -17,20 +21,23 @@ export default function BillDetailScreen({ route, navigation }) {
   const [itemsDraft, setItemsDraft] = useState([]);
   const [stockItems, setStockItems] = useState([]);
   const [picking,    setPicking]    = useState(false);
-  const [allPaid,    setAllPaid]    = useState(false);
   const [saving,     setSaving]     = useState(false);
   const [error,      setError]      = useState('');
+
+  const [addingPayment, setAddingPayment] = useState(false);
+  const [payForm,       setPayForm]       = useState({ amount:'', date: today(), mode:'cash', note:'' });
+  const [paySaving,     setPaySaving]     = useState(false);
+  const [payError,      setPayError]      = useState('');
 
   useEffect(() => {
     getBill(billId).then(r => {
       setBill(r.bill);
-      setDraft({ laborCharge: r.bill.laborCharge||0, transportCharge: r.bill.transportCharge||0, claim: r.bill.claim||0, paidAmount: r.bill.paidAmount||0, notes: r.bill.notes||'' });
+      setDraft({ laborCharge: r.bill.laborCharge||0, transportCharge: r.bill.transportCharge||0, claim: r.bill.claim||0, notes: r.bill.notes||'' });
     }).catch(() => Alert.alert('Error','Bill not found'));
   }, [billId]);
 
   const startEditing = () => {
     setItemsDraft((bill.items||[]).map(li => ({ ...li, id: uid() })));
-    setAllPaid(false);
     setEditing(true);
     if (stockItems.length === 0) getItems().then(r => setStockItems(r.items||[])).catch(()=>{});
   };
@@ -38,7 +45,9 @@ export default function BillDetailScreen({ route, navigation }) {
   const updateLine = (id, patch) => setItemsDraft(p => p.map(li => {
     if (li.id !== id) return li;
     const next = { ...li, ...patch };
-    next.amount = (Number(next.weightKg)||0) * (Number(next.ratePerKg)||0);
+    const gross = (Number(next.weightKg)||0) * (Number(next.ratePerKg)||0);
+    next.claimAmt = gross * ((Number(next.claimPct)||0) / 100);
+    next.amount = Math.max(gross - next.claimAmt, 0);
     return next;
   }));
 
@@ -50,7 +59,7 @@ export default function BillDetailScreen({ route, navigation }) {
   const addLine = (stockItem) => {
     setItemsDraft(p => [...p, {
       id: uid(), item: stockItem._id, name: stockItem.name, unit: stockItem.unit || 'KG',
-      weightKg: 0, grossWeightKg: 0, deductionPct: 0, deductionAmt: 0,
+      weightKg: 0, grossWeightKg: 0, deductionPct: 0, deductionAmt: 0, claimPct: 0, claimAmt: 0,
       ratePerKg: stockItem.pricePerUnit || 0, amount: 0,
     }]);
     setPicking(false);
@@ -58,20 +67,18 @@ export default function BillDetailScreen({ route, navigation }) {
 
   const liveItemAmount = itemsDraft.reduce((s, li) => s + (Number(li.amount)||0), 0);
   const liveTotal = liveItemAmount - (Number(draft.laborCharge)||0) - (Number(draft.transportCharge)||0) - (Number(draft.claim)||0);
-  const livePaid = allPaid ? liveTotal : (Number(draft.paidAmount)||0);
 
   const handleSync = async () => {
     setSaving(true); setError('');
     try {
       const payload = {
         ...draft,
-        paidAmount: livePaid,
         items: itemsDraft.map(({ id, ...li }) => li),
         syncedAt: new Date().toISOString(),
       };
       const res = await updateBill(billId, payload);
       setBill(res.bill);
-      setDraft({ laborCharge: res.bill.laborCharge||0, transportCharge: res.bill.transportCharge||0, claim: res.bill.claim||0, paidAmount: res.bill.paidAmount||0, notes: res.bill.notes||'' });
+      setDraft({ laborCharge: res.bill.laborCharge||0, transportCharge: res.bill.transportCharge||0, claim: res.bill.claim||0, notes: res.bill.notes||'' });
       setEditing(false);
       Alert.alert('✅ Synced','Bill charges updated and synced to customer.');
     } catch (e) { setError(e.message); }
@@ -88,11 +95,46 @@ export default function BillDetailScreen({ route, navigation }) {
     ]);
   };
 
+  const openAddPayment = (prefillAmount) => {
+    setPayError('');
+    setPayForm({ amount: prefillAmount != null ? String(prefillAmount.toFixed(2)) : '', date: today(), mode:'cash', note:'' });
+    setAddingPayment(true);
+  };
+
+  const submitPayment = async () => {
+    setPayError('');
+    if (!payForm.amount || Number(payForm.amount) <= 0) { setPayError('राशि डालें।'); return; }
+    setPaySaving(true);
+    try {
+      const res = await addBillPayment(billId, {
+        amount: Number(payForm.amount), date: new Date(payForm.date).toISOString(),
+        mode: payForm.mode, note: payForm.note,
+      });
+      setBill(res.bill);
+      setAddingPayment(false);
+    } catch (e) { setPayError(e.message); } finally { setPaySaving(false); }
+  };
+
+  const handleRemovePayment = (paymentId) => {
+    Alert.alert('भुगतान हटाएं', 'क्या आप इस भुगतान entry को हटाना चाहते हैं?', [
+      { text:'रद्द', style:'cancel' },
+      { text:'हटाएं', style:'destructive', onPress: async () => {
+        try { const res = await removeBillPayment(billId, paymentId); setBill(res.bill); }
+        catch (e) { Alert.alert('Error', e.message); }
+      }},
+    ]);
+  };
+
+  const handlePrint = async () => {
+    try { await buildAndShareInvoicePdf(bill); }
+    catch (e) { Alert.alert('Error', e.message || 'PDF नहीं बन सका।'); }
+  };
+
   if (!bill) return <View style={{ flex:1, backgroundColor: COLORS.bg }} />;
 
   const balance = Math.max((bill.totalAmount||0) - (bill.paidAmount||0), 0);
   const tone = bill.status === 'paid' ? 'green' : bill.status === 'partial' ? 'gold' : 'red';
-  const liveBalance = Math.max(liveTotal - livePaid, 0);
+  const paymentsDesc = [...(bill.payments||[])].sort((a,b) => new Date(b.date) - new Date(a.date));
 
   return (
     <ScrollView style={styles.container}>
@@ -110,6 +152,7 @@ export default function BillDetailScreen({ route, navigation }) {
             <View>
               {isAdmin && <Text style={styles.bold}>{bill.customer?.name}</Text>}
               <Text style={styles.muted}>बिल: {new Date(bill.billDate).toLocaleDateString('hi-IN', { year:'numeric', month:'long', day:'numeric' })}</Text>
+              <Text style={[styles.muted, { fontWeight:'700', color: COLORS.blue, marginTop: 2 }]}>{bill.billNumber || '—'}</Text>
             </View>
             <Badge text={bill.status === 'paid' ? '✅ Paid' : bill.status === 'partial' ? '⏳ Partial' : '🔴 Pending'} tone={tone} />
           </View>
@@ -130,6 +173,7 @@ export default function BillDetailScreen({ route, navigation }) {
                   </View>
                   <Input label="वज़न (KG)" value={String(li.weightKg)} onChangeText={v => updateLine(li.id, { weightKg: Number(v)||0 })} keyboardType="decimal-pad" />
                   <Input label="Rate / KG (₹)" value={String(li.ratePerKg)} onChangeText={v => updateLine(li.id, { ratePerKg: Number(v)||0 })} keyboardType="decimal-pad" />
+                  <Input label="क्लेम % (Claim)" value={String(li.claimPct||'')} onChangeText={v => updateLine(li.id, { claimPct: Number(v)||0 })} keyboardType="decimal-pad" />
                   <View style={styles.row}><Text style={styles.muted}>राशि</Text><Text style={styles.val}>{INR(li.amount)}</Text></View>
                 </View>
               ))}
@@ -158,6 +202,7 @@ export default function BillDetailScreen({ route, navigation }) {
                 {(it.deductionPct > 0) && <View style={styles.row}><Text style={styles.muted}>Deduction {it.deductionPct}%</Text><Text style={[styles.val, { color: COLORS.red }]}>− {it.deductionAmt?.toFixed(3)} kg</Text></View>}
                 <View style={styles.row}><Text style={styles.muted}>Net Weight</Text><Text style={styles.val}>{it.weightKg?.toFixed(3)} kg</Text></View>
                 <View style={styles.row}><Text style={styles.muted}>Rate / KG</Text><Text style={styles.val}>{INR(it.ratePerKg)}</Text></View>
+                {(it.claimPct > 0) && <View style={styles.row}><Text style={styles.muted}>Claim {it.claimPct}%</Text><Text style={[styles.val, { color: COLORS.red }]}>− {INR(it.claimAmt)}</Text></View>}
                 <View style={[styles.row, styles.borderTop]}><Text style={styles.bold}>वस्तु राशि</Text><Text style={styles.bold}>{INR(it.amount)}</Text></View>
               </View>
             ))
@@ -166,7 +211,7 @@ export default function BillDetailScreen({ route, navigation }) {
 
         {/* Deductions — editable by admin */}
         <Card>
-          <Text style={styles.section}>➖ कटौतियाँ</Text>
+          <Text style={styles.section}>➖ कटौतियाँ (Global)</Text>
           {isAdmin && editing ? (
             <>
               {[['laborCharge','लेबर चार्ज'],['transportCharge','ट्रांसपोर्ट'],['claim','क्लेम/डिस्काउंट']].map(([k,l]) => (
@@ -190,28 +235,63 @@ export default function BillDetailScreen({ route, navigation }) {
             <Text style={styles.bold}>Grand Total</Text>
             <Text style={[styles.bold, { fontSize: 18, color: COLORS.blue }]}>{INR(isAdmin && editing ? liveTotal : bill.totalAmount)}</Text>
           </View>
-          {isAdmin && editing ? (
-            <>
-              <View style={{ flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginTop: 8, marginBottom: 4 }}>
-                <Text style={styles.muted}>अब तक कुल भुगतान राशि</Text>
-                <TouchableOpacity onPress={() => setAllPaid(s => !s)} style={[styles.toggle, allPaid && { backgroundColor: COLORS.blue }]}>
-                  <Text style={{ color: allPaid ? '#fff' : COLORS.muted, fontSize: 12, fontWeight:'600' }}>All Paid</Text>
-                </TouchableOpacity>
-              </View>
-              <Input value={allPaid ? String(liveTotal.toFixed(2)) : String(draft.paidAmount||'')} onChangeText={v => { setDraft(d=>({...d,paidAmount:Number(v)||0})); setAllPaid(false); }} keyboardType="decimal-pad" editable={!allPaid} />
-              <Text style={[styles.muted, { fontSize: 11, marginTop: -6, marginBottom: 8 }]}>ग्राहक थोड़ा-थोड़ा भुगतान करे तो यहाँ कुल जमा राशि अपडेट करें।</Text>
-            </>
-          ) : (
-            <View style={[styles.row, styles.borderTop]}>
-              <Text style={styles.muted}>भुगतान राशि</Text><Text style={styles.val}>{INR(bill.paidAmount)}</Text>
-            </View>
-          )}
+          <View style={[styles.row, styles.borderTop]}>
+            <Text style={styles.muted}>अब तक प्राप्त भुगतान</Text><Text style={styles.val}>{INR(bill.paidAmount)}</Text>
+          </View>
           <View style={styles.row}>
             <Text style={styles.bold}>बकाया राशि</Text>
-            <Text style={[styles.bold, { color: (isAdmin && editing ? liveBalance : balance) > 0 ? COLORS.red : COLORS.green }]}>
-              {(isAdmin && editing ? liveBalance : balance) > 0 ? INR(isAdmin && editing ? liveBalance : balance) : '✅ पूरा भुगतान'}
+            <Text style={[styles.bold, { color: balance > 0 ? COLORS.red : COLORS.green }]}>
+              {balance > 0 ? INR(balance) : '✅ पूरा भुगतान'}
             </Text>
           </View>
+        </Card>
+
+        {/* Payment History / Installments */}
+        <Card>
+          <Text style={styles.section}>🧾 Payment History</Text>
+          {paymentsDesc.length === 0 && <Text style={styles.muted}>अभी कोई भुगतान दर्ज नहीं है।</Text>}
+          {paymentsDesc.map(p => (
+            <View key={p._id} style={styles.payRow}>
+              <View style={{ flex:1 }}>
+                <Text style={styles.val}>{INR(p.amount)} <Text style={styles.muted}>· {MODE_LABEL[p.mode]||p.mode}</Text></Text>
+                <Text style={styles.muted}>{new Date(p.date).toLocaleDateString('hi-IN')}{p.note ? ` · ${p.note}` : ''}</Text>
+              </View>
+              {isAdmin && (
+                <TouchableOpacity onPress={() => handleRemovePayment(p._id)}><Text style={{ color: COLORS.red, fontWeight:'700', fontSize:16 }}>🗑</Text></TouchableOpacity>
+              )}
+            </View>
+          ))}
+
+          {isAdmin && (addingPayment ? (
+            <View style={{ marginTop: 10 }}>
+              <Input label="राशि (₹)" value={payForm.amount} onChangeText={v => setPayForm(f=>({...f,amount:v}))} keyboardType="decimal-pad" />
+              <Input label="तारीख़ (YYYY-MM-DD)" value={payForm.date} onChangeText={v => setPayForm(f=>({...f,date:v}))} />
+              <View style={{ flexDirection:'row', gap: 6, marginBottom: 10 }}>
+                {PAYMENT_MODES.map(([k,l]) => (
+                  <TouchableOpacity key={k} onPress={() => setPayForm(f=>({...f,mode:k}))} style={[styles.modeChip, payForm.mode===k && styles.optActive]}>
+                    <Text style={{ color: payForm.mode===k ? '#fff' : COLORS.text, fontSize: 12, fontWeight:'600' }}>{l}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <Input label="नोट / Reference (Optional)" value={payForm.note} onChangeText={v => setPayForm(f=>({...f,note:v}))} />
+              {!!payError && <Text style={{ color: COLORS.red, marginBottom: 8 }}>{payError}</Text>}
+              <View style={{ flexDirection:'row', gap: 10 }}>
+                <Button title="रद्द करें" variant="outline" onPress={() => setAddingPayment(false)} style={{ flex:1 }} />
+                <Button title="जोड़ें" onPress={submitPayment} loading={paySaving} style={{ flex:1 }} />
+              </View>
+            </View>
+          ) : (
+            <View style={{ flexDirection:'row', gap: 10, marginTop: 10 }}>
+              <TouchableOpacity style={styles.addBtn2} onPress={() => openAddPayment()}>
+                <Text style={{ color: COLORS.blue, fontWeight:'700' }}>+ भुगतान जोड़ें</Text>
+              </TouchableOpacity>
+              {balance > 0 && (
+                <TouchableOpacity style={[styles.addBtn2, { borderColor: COLORS.green, borderStyle:'solid' }]} onPress={() => openAddPayment(balance)}>
+                  <Text style={{ color: COLORS.green, fontWeight:'700' }}>✅ All Paid अभी करें</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          ))}
         </Card>
 
         {/* Notes */}
@@ -247,7 +327,7 @@ export default function BillDetailScreen({ route, navigation }) {
             <Button title="✅ Sync Now" onPress={handleSync} loading={saving} style={{ flex: 1, backgroundColor: COLORS.green }} />
           </View>
         )}
-        <Button title="🖨️ Print / Share" variant="outline" onPress={() => Alert.alert('Print','Production app mein print/share kaam karega.')} style={{ marginBottom: 10 }} />
+        <Button title="🖨️ Print / PDF" variant="outline" onPress={handlePrint} style={{ marginBottom: 10 }} />
         {isAdmin && <Button title="🗑️ बिल हटाएं" variant="danger" onPress={handleDelete} />}
       </View>
     </ScrollView>
@@ -268,6 +348,10 @@ const styles = StyleSheet.create({
   photoBtn: { padding: 12, borderWidth: 1, borderColor: COLORS.blue, borderRadius: 10, alignItems: 'center' },
   itemLine: { marginBottom: 14, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: COLORS.border },
   addBtn:   { padding: 10, borderWidth: 1, borderColor: COLORS.blue, borderStyle:'dashed', borderRadius: 10, alignItems: 'center', marginTop: 4 },
+  addBtn2:  { flex:1, padding: 10, borderWidth: 1, borderColor: COLORS.blue, borderStyle:'dashed', borderRadius: 10, alignItems: 'center' },
   option:   { padding: 10, borderWidth:1, borderColor: COLORS.border, borderRadius: 10, marginBottom: 6 },
   toggle:   { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, borderWidth:1, borderColor: COLORS.border },
+  optActive:{ backgroundColor: COLORS.blue, borderColor: COLORS.blue },
+  modeChip: { flex:1, paddingVertical: 8, borderRadius: 8, borderWidth:1, borderColor: COLORS.border, alignItems:'center' },
+  payRow:   { flexDirection:'row', alignItems:'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: COLORS.border },
 });
