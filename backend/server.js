@@ -13,6 +13,7 @@ const userRoutes    = require('./routes/userRoutes');
 const itemRoutes    = require('./routes/itemRoutes');
 const billRoutes    = require('./routes/billRoutes');
 const contactRoutes = require('./routes/contacts');           // Task 6
+const settingsRoutes = require('./routes/settingsRoutes');
 const { transactionRoutes, reportRoutes } = require('./routes/otherRoutes');
 
 connectDB().catch((err) => console.error('Startup MongoDB connect failed:', err.message));
@@ -56,6 +57,7 @@ app.use('/api/bills',          billRoutes);
 app.use('/api/uploadContacts', contactRoutes);   // Task 6 — POST /api/uploadContacts
 app.use('/api/transactions',   transactionRoutes);
 app.use('/api/reports',        reportRoutes);
+app.use('/api/settings',       settingsRoutes);
 
 // ── Error handling ────────────────────────────────────────────────
 app.use(notFound);

@@ -9,10 +9,23 @@ const billItemSchema = new mongoose.Schema(
     grossWeightKg:{ type: Number, default: 0 },
     deductionPct: { type: Number, default: 0 },
     deductionAmt: { type: Number, default: 0 },
+    claimPct:     { type: Number, default: 0 },
+    claimAmt:     { type: Number, default: 0 },
     ratePerKg:    { type: Number, default: 0 },
     amount:       { type: Number, required: true, default: 0 },
   },
   { _id: false }
+);
+
+const paymentSchema = new mongoose.Schema(
+  {
+    date:       { type: Date, required: true, default: Date.now },
+    amount:     { type: Number, required: true },
+    mode:       { type: String, enum: ['cash', 'upi', 'bank', 'other'], default: 'cash' },
+    note:       { type: String, trim: true, default: '' },
+    recordedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  },
+  { timestamps: true }
 );
 
 const billSchema = new mongoose.Schema(
@@ -20,6 +33,7 @@ const billSchema = new mongoose.Schema(
     customer:        { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     createdBy:       { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     billDate:        { type: Date, required: true, default: Date.now, index: true },
+    billNumber:      { type: String, unique: true, sparse: true, index: true },
 
     items:           { type: [billItemSchema], default: [] },
     itemAmount:      { type: Number, default: 0 },
@@ -28,6 +42,7 @@ const billSchema = new mongoose.Schema(
     claim:           { type: Number, default: 0 },
     totalAmount:     { type: Number, required: true, default: 0 },
     paidAmount:      { type: Number, default: 0 },
+    payments:        { type: [paymentSchema], default: [] },
 
     status:  { type: String, enum: ['paid', 'pending', 'partial'], default: 'pending' },
     syncedAt:{ type: Date, default: null },

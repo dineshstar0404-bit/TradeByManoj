@@ -1,6 +1,6 @@
 const express = require('express');
 const multer  = require('multer');
-const { createBill, getBills, getBillById, updateBill, deleteBill } = require('../controllers/billController');
+const { createBill, getBills, getBillById, updateBill, addPayment, removePayment, deleteBill } = require('../controllers/billController');
 const { protect }     = require('../middleware/auth');
 const { requireRole } = require('../middleware/role');
 const { upload }      = require('../config/cloudinary');
@@ -25,5 +25,7 @@ router.get('/',      getBills);
 router.get('/:id',   getBillById);
 router.post('/',     requireRole('admin'), uploadPhoto, createBill);
 router.put('/:id',   requireRole('admin'), uploadPhoto, updateBill);
+router.post('/:id/payments',              requireRole('admin'), addPayment);
+router.delete('/:id/payments/:paymentId', requireRole('admin'), removePayment);
 router.delete('/:id',requireRole('admin'), deleteBill);
 module.exports = router;
